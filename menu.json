@@ -1,0 +1,356 @@
+[
+ {
+  "cat": "Roll",
+  "emoji": "🌯",
+  "items": [
+   [
+    "Veg Roll",
+    60
+   ],
+   [
+    "Paneer Roll",
+    90
+   ],
+   [
+    "Egg Roll",
+    70
+   ],
+   [
+    "Chicken Roll",
+    100
+   ],
+   [
+    "Biryani Roll",
+    120
+   ],
+   [
+    "Chicken Tikka Roll",
+    120
+   ]
+  ]
+ },
+ {
+  "cat": "Burger",
+  "emoji": "🍔",
+  "items": [
+   [
+    "Veg Burger",
+    60
+   ],
+   [
+    "Paneer Burger",
+    80
+   ],
+   [
+    "Chicken Burger",
+    90
+   ]
+  ]
+ },
+ {
+  "cat": "Snacks",
+  "emoji": "🍟",
+  "items": [
+   [
+    "Onion Pakoda",
+    100
+   ],
+   [
+    "Paneer Pakoda",
+    180
+   ],
+   [
+    "Egg Pakoda",
+    100
+   ],
+   [
+    "Chicken Pakoda",
+    150
+   ],
+   [
+    "French Fries",
+    160
+   ],
+   [
+    "Mix Pakoda",
+    140
+   ],
+   [
+    "Chicken Fry",
+    150
+   ],
+   [
+    "Leg Fry",
+    150
+   ],
+   [
+    "Chicken 65",
+    200
+   ],
+   [
+    "Paneer 65",
+    200
+   ],
+   [
+    "Gunna Chicken",
+    220
+   ]
+  ]
+ },
+ {
+  "cat": "Breakfast",
+  "emoji": "🍳",
+  "items": [
+   [
+    "Pav Bhaji",
+    100
+   ],
+   [
+    "Chhole Bhature",
+    120
+   ],
+   [
+    "Omelette",
+    50
+   ],
+   [
+    "Egg Bhurji",
+    60
+   ],
+   [
+    "Boiled Egg",
+    30
+   ]
+  ]
+ },
+ {
+  "cat": "Rice / Biryani",
+  "emoji": "🍚",
+  "items": [
+   [
+    "Plain Pulao",
+    100
+   ],
+   [
+    "Chicken Pulao",
+    130
+   ],
+   [
+    "Paneer Pulao",
+    130
+   ],
+   [
+    "Kaju Pulao",
+    140
+   ],
+   [
+    "Chicken Biryani",
+    130
+   ],
+   [
+    "Veg Biryani",
+    120
+   ],
+   [
+    "Paneer Biryani",
+    130
+   ],
+   [
+    "Egg Biryani",
+    120
+   ],
+   [
+    "Mutton Biryani",
+    150
+   ],
+   [
+    "Veg Fried Rice",
+    90
+   ],
+   [
+    "Paneer Fried Rice",
+    120
+   ],
+   [
+    "Chicken Fried Rice",
+    120
+   ],
+   [
+    "Mix Fried Rice",
+    140
+   ],
+   [
+    "Steam Rice",
+    70
+   ],
+   [
+    "Jeera Rice",
+    80
+   ]
+  ]
+ },
+ {
+  "cat": "Tandoori Veg",
+  "emoji": "🍢",
+  "items": [
+   [
+    "Paneer Tikka",
+    240
+   ],
+   [
+    "Paneer Malai Tikka",
+    260
+   ],
+   [
+    "Paneer Seekh Kabab",
+    250
+   ],
+   [
+    "Paneer Achari Tikka",
+    250
+   ],
+   [
+    "Veg Hara Bhara Kabab",
+    250
+   ],
+   [
+    "Mushroom Tikka",
+    250
+   ],
+   [
+    "Paneer Hariyali Tikka",
+    250
+   ],
+   [
+    "Paneer Kali Mirch Tikka",
+    250
+   ]
+  ]
+ },
+ {
+  "cat": "Tandoori Non-Veg",
+  "emoji": "🍗",
+  "items": [
+   [
+    "Chicken Tikka",
+    240
+   ],
+   [
+    "Chicken Malai Tikka",
+    260
+   ],
+   [
+    "Chicken Tandoori (Half)",
+    260
+   ],
+   [
+    "Chicken Tandoori (Full)",
+    360
+   ],
+   [
+    "Chicken Afghani (Half)",
+    260
+   ],
+   [
+    "Chicken Afghani (Full)",
+    360
+   ],
+   [
+    "Chicken Lemon Tikka",
+    260
+   ],
+   [
+    "Chicken Garlic Tikka",
+    260
+   ],
+   [
+    "Chicken Reshmi Kabab",
+    280
+   ],
+   [
+    "Chicken Leg Kabab",
+    260
+   ],
+   [
+    "Chicken Achari Tikka",
+    260
+   ],
+   [
+    "Chicken Kali Mirch Tikka",
+    260
+   ]
+  ]
+ },
+ {
+  "cat": "Salad / Raita",
+  "emoji": "🥗",
+  "items": [
+   [
+    "Green Salad",
+    60
+   ],
+   [
+    "Onion Salad",
+    30
+   ],
+   [
+    "Mix Raita",
+    60
+   ]
+  ]
+ },
+ {
+  "cat": "Beverage",
+  "emoji": "🥤",
+  "items": [
+   [
+    "Cold Drink",
+    30
+   ],
+   [
+    "Mineral Water",
+    20
+   ],
+   [
+    "Hot Coffee",
+    35
+   ],
+   [
+    "Cold Coffee",
+    100
+   ],
+   [
+    "Fresh Lime Soda",
+    100
+   ],
+   [
+    "Lime Pudina Soda",
+    100
+   ],
+   [
+    "Vanilla/Chocolate Shake",
+    65
+   ],
+   [
+    "Mango/Badam Shake",
+    100
+   ],
+   [
+    "Pineapple/Strawberry Shake",
+    100
+   ],
+   [
+    "Butterscotch Shake",
+    100
+   ],
+   [
+    "Masala Cold Drink",
+    60
+   ],
+   [
+    "Mojito",
+    80
+   ]
+  ]
+ }
+]

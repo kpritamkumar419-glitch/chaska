@@ -1,0 +1,1 @@
+{"name":"chaska-backend","version":"1.0.0","type":"module","scripts":{"start":"node server.js","test":"node test.mjs"},"engines":{"node":">=22.13"}}
