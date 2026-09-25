@@ -1,0 +1,10 @@
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const ST=['New','Accepted','Preparing','Out for delivery','Delivered'];
+async function api(m,p,b,tok){const r=await fetch('/api'+p,{method:m,headers:{'Content-Type':'application/json',...(tok?{Authorization:'Bearer '+tok}:{})},body:b?JSON.stringify(b):undefined});const j=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(j.error||'Error'),{status:r.status});return j}
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3000)}
+function km(a,b,c,d){if([a,b,c,d].some(v=>typeof v!=='number'))return null;const r=x=>x*Math.PI/180,h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return+(12742*Math.asin(Math.sqrt(h))*1.3).toFixed(1)}
+function IMG(f,m,cb){if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);cb(c.toDataURL('image/jpeg',.7))};im.src=r.result};r.readAsDataURL(f)}
+// schematic map from real coordinates: R=restaurant, D=destination, P=rider (each {lat,lng} or null)
+function mapSvg(R,D,P,dark){const pts=[R,D,P].filter(Boolean);if(!pts.length)return'';const la=pts.map(p=>p.lat),lo=pts.map(p=>p.lng),a=Math.min(...la),b=Math.max(...la),c=Math.min(...lo),d=Math.max(...lo),sa=Math.max(b-a,.004),so=Math.max(d-c,.004);
+const X=p=>30+(p.lng-c)/so*240,Y=p=>100-(p.lat-a)/sa*70,t=(p,e)=>p?`<text x="${X(p)}" y="${Y(p)}" font-size="24" text-anchor="middle">${e}</text>`:'';
+return`<svg viewBox="0 0 300 130" style="width:100%;border-radius:14px;background:${dark?'#26352b':'#c5e1a5'};margin:8px 0">${R&&D?`<line x1="${X(R)}" y1="${Y(R)}" x2="${X(D)}" y2="${Y(D)}" stroke="#ffd75e" stroke-width="3" stroke-dasharray="6 5"/>`:''}${t(R,'🏪')}${t(D,'🏠')}${t(P,'🏍️')}</svg>`}
