@@ -15,7 +15,10 @@ const REST = { lat: +env.REST_LAT || 26.4667, lng: +env.REST_LNG || 84.4333 }; /
 const now = () => Date.now();
 const OFFER_S = +env.OFFER_SECONDS || 30; // rider ke paas accept karne ke second
 
-const db = new DatabaseSync(env.DB_FILE || 'chaska.db');
+const DB_FILE = env.DB_FILE || 'chaska.db'; // Render free plan: this file is WIPED whenever the service sleeps & wakes.
+// Fix: add a paid Starter plan + a persistent Disk in Render, mount it (e.g. /var/data), then set DB_FILE=/var/data/chaska.db
+{ const dir = path.dirname(DB_FILE); if (dir && dir !== '.' && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); }
+const db = new DatabaseSync(DB_FILE);
 db.exec(`PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS products(id INTEGER PRIMARY KEY AUTOINCREMENT,cat TEXT,name TEXT,price INT,img TEXT DEFAULT '',custom INT DEFAULT 0,off INT DEFAULT 0);
 CREATE TABLE IF NOT EXISTS banners(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,sub TEXT DEFAULT '',img TEXT DEFAULT '');
@@ -25,7 +28,10 @@ CREATE TABLE IF NOT EXISTS otps(phone TEXT,role TEXT,code TEXT,exp INT,tries INT
 CREATE TABLE IF NOT EXISTS offers(oid TEXT,rider INT,t INT,state TEXT DEFAULT 'sent',PRIMARY KEY(oid,rider));
 CREATE TABLE IF NOT EXISTS pushes(endpoint TEXT PRIMARY KEY,rider INT);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY,v TEXT);
-CREATE TABLE IF NOT EXISTS msgs(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT,phone TEXT,msg TEXT,created INT);`);
+CREATE TABLE IF NOT EXISTS msgs(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT,phone TEXT,msg TEXT,created INT);
+CREATE TABLE IF NOT EXISTS coupons(code TEXT PRIMARY KEY,type TEXT,value INT,active INT DEFAULT 1,max_uses INT,uses INT DEFAULT 0,created INT);
+CREATE TABLE IF NOT EXISTS customers(email TEXT PRIMARY KEY,name TEXT,created INT);`);
+for (const [col, def] of [['email', 'TEXT'], ['coupon', 'TEXT'], ['discount', 'INT DEFAULT 0'], ['subtotal', 'INT']]) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col} ${def}`); } catch {} } // migration for orders created before this update
 const CATS = JSON.parse(fs.readFileSync(new URL('./menu.json', import.meta.url), 'utf8'));
 if (!db.prepare('SELECT COUNT(*) c FROM products').get().c) {
   const ins = db.prepare('INSERT INTO products(cat,name,price) VALUES(?,?,?)');
@@ -51,6 +57,8 @@ const limit = (key, max, ms) => { const t = now(), a = (hits.get(key) || []).fil
 setInterval(() => { const t = now(); for (const [k, a] of hits) if (!a.some((x) => t - x < 6e4)) hits.delete(k); }, 6e4).unref();
 const km = (a, b, c, d) => { if ([a, b, c, d].some((v) => typeof v !== 'number')) return null; const r = (x) => x * Math.PI / 180, h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2; return +(12742 * Math.asin(Math.sqrt(h)) * 1.3).toFixed(1); }; // x1.3 ≈ road factor
 const phoneOk = (p) => /^[6-9]\d{9}$/.test(String(p));
+const emailOk = (e) => typeof e === 'string' && e.length < 200 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+const couponCalc = (row, subtotal) => { if (!row || !row.active) return 0; if (row.max_uses && row.uses >= row.max_uses) return 0; const d = row.type === 'percent' ? Math.round(subtotal * row.value / 100) : row.value; return Math.max(0, Math.min(d, subtotal)); };
 const imgOk = (s) => !s || (typeof s === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(s) && s.length < 450000);
 const str = (v, min, max, what) => { if (typeof v !== 'string' || v.trim().length < min || v.length > max) throw err(400, `${what} galat hai`); return v.trim(); };
 
@@ -87,34 +95,55 @@ setInterval(() => { for (const c of clients) c.res.write(': hb\n\n'); }, 25000).
 // ---------- routes ----------
 const routes = [];
 const on = (m, p, role, fn) => routes.push([m, new RegExp('^' + p.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), role, fn]);
-const orderOut = (o) => ({ id: o.id, status: o.status, cancelled: !!o.cancelled, total: o.total, items: JSON.parse(o.items), name: o.name, phone: o.phone, addr: o.addr, pay: o.pay, rider: o.rider, earn: o.earn, created: o.created, out_at: o.out_at, done_at: o.done_at });
+const orderOut = (o) => ({ id: o.id, status: o.status, cancelled: !!o.cancelled, total: o.total, subtotal: o.subtotal ?? o.total, discount: o.discount || 0, coupon: o.coupon || null, items: JSON.parse(o.items), name: o.name, phone: o.phone, addr: o.addr, pay: o.pay, rider: o.rider, earn: o.earn, created: o.created, out_at: o.out_at, done_at: o.done_at });
 
 // auth
+async function sendEmailOtp(to, code) {
+  if (!env.RESEND_API_KEY) throw err(500, 'Email provider set nahi hai (RESEND_API_KEY)');
+  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: env.RESEND_FROM || 'Chaska <onboarding@resend.dev>', to, subject: `Aapka OTP: ${code}`, html: `<p>Aapka Chaska login OTP hai: <b>${code}</b> (5 minute tak valid)</p>` }) });
+  if (!r.ok) throw err(502, 'OTP email bhejne me dikkat aayi');
+}
 on('POST', '/api/auth/otp', null, async ({ body, ip }) => {
-  const { phone, role } = body; limit('otp' + ip, 10, 6e5);
-  if (!phoneOk(phone) || !['owner', 'rider'].includes(role)) throw err(400, '10 digit number daalein');
-  if (role === 'owner' ? phone !== OWNER : !db.prepare('SELECT 1 FROM partners WHERE phone=?').get(phone)) throw err(404, 'Ye number registered nahi hai');
-  const old = db.prepare('SELECT sent FROM otps WHERE phone=? AND role=?').get(phone, role);
+  const { role } = body; limit('otp' + ip, 10, 6e5);
+  if (!['owner', 'rider', 'customer'].includes(role)) throw err(400, 'Role galat hai');
+  const idField = role === 'customer' ? String(body.email || '').trim().toLowerCase() : String(body.phone || '').trim();
+  if (role === 'customer' ? !emailOk(idField) : !phoneOk(idField)) throw err(400, role === 'customer' ? 'Sahi email daalein' : '10 digit number daalein');
+  if (role === 'owner' && idField !== OWNER) throw err(404, 'Ye number registered nahi hai');
+  if (role === 'rider' && !db.prepare('SELECT 1 FROM partners WHERE phone=?').get(idField)) throw err(404, 'Ye number registered nahi hai');
+  const old = db.prepare('SELECT sent FROM otps WHERE phone=? AND role=?').get(idField, role);
   if (old && now() - old.sent < 30000) throw err(429, '30 second baad dobara try karein');
   const code = DEMO ? '1234' : String(crypto.randomInt(1000, 10000));
-  db.prepare('INSERT OR REPLACE INTO otps(phone,role,code,exp,tries,sent) VALUES(?,?,?,?,0,?)').run(phone, role, hashOtp(code), now() + 5 * 6e4, now());
+  db.prepare('INSERT OR REPLACE INTO otps(phone,role,code,exp,tries,sent) VALUES(?,?,?,?,0,?)').run(idField, role, hashOtp(code), now() + 5 * 6e4, now());
   if (!DEMO) {
-    if (!env.FAST2SMS_KEY) throw err(500, 'SMS provider set nahi hai (FAST2SMS_KEY)');
-    const r = await fetch(`https://www.fast2sms.com/dev/bulkV2?authorization=${encodeURIComponent(env.FAST2SMS_KEY)}&route=otp&variables_values=${code}&numbers=${phone}`);
-    if (!r.ok) throw err(502, 'OTP bhejne me dikkat aayi');
+    if (role === 'customer') await sendEmailOtp(idField, code);
+    else {
+      if (!env.FAST2SMS_KEY) throw err(500, 'SMS provider set nahi hai (FAST2SMS_KEY)');
+      const r = await fetch(`https://www.fast2sms.com/dev/bulkV2?authorization=${encodeURIComponent(env.FAST2SMS_KEY)}&route=otp&variables_values=${code}&numbers=${idField}`);
+      if (!r.ok) throw err(502, 'OTP bhejne me dikkat aayi');
+    }
   }
   return DEMO ? { sent: true, demo_otp: code } : { sent: true };
 });
 on('POST', '/api/auth/verify', null, ({ body, ip }) => {
-  const { phone, role, otp } = body; limit('ver' + ip, 20, 6e5);
-  const row = db.prepare('SELECT * FROM otps WHERE phone=? AND role=?').get(String(phone), String(role));
+  const { role, otp } = body; limit('ver' + ip, 20, 6e5);
+  const idField = role === 'customer' ? String(body.email || '').trim().toLowerCase() : String(body.phone || '').trim();
+  const row = db.prepare('SELECT * FROM otps WHERE phone=? AND role=?').get(idField, String(role));
   if (!row || row.exp < now() || row.tries >= 5) throw err(400, 'OTP expire ho gaya, naya mangwayein');
-  if (row.code !== hashOtp(String(otp))) { db.prepare('UPDATE otps SET tries=tries+1 WHERE phone=? AND role=?').run(phone, role); throw err(400, 'Galat OTP'); }
-  db.prepare('DELETE FROM otps WHERE phone=? AND role=?').run(phone, role);
+  if (row.code !== hashOtp(String(otp))) { db.prepare('UPDATE otps SET tries=tries+1 WHERE phone=? AND role=?').run(idField, role); throw err(400, 'Galat OTP'); }
+  db.prepare('DELETE FROM otps WHERE phone=? AND role=?').run(idField, role);
   if (role === 'owner') return { token: sign({ role, id: 0 }) };
-  const p = db.prepare('SELECT id,name FROM partners WHERE phone=?').get(phone);
+  if (role === 'customer') {
+    db.prepare('INSERT OR IGNORE INTO customers(email,name,created) VALUES(?,?,?)').run(idField, str(body.name || 'Guest', 1, 60, 'Naam'), now());
+    if (body.name) db.prepare('UPDATE customers SET name=? WHERE email=?').run(str(body.name, 1, 60, 'Naam'), idField);
+    const c = db.prepare('SELECT name FROM customers WHERE email=?').get(idField);
+    return { token: sign({ role, email: idField }), name: c.name };
+  }
+  const p = db.prepare('SELECT id,name FROM partners WHERE phone=?').get(idField);
   return { token: sign({ role, id: p.id }), name: p.name };
 });
+on('GET', '/api/customer/me', 'customer', ({ user }) => db.prepare('SELECT name,email FROM customers WHERE email=?').get(user.email));
+on('PATCH', '/api/customer/me', 'customer', ({ user, body }) => { db.prepare('UPDATE customers SET name=? WHERE email=?').run(str(body.name, 1, 60, 'Naam'), user.email); return { ok: true }; });
+on('GET', '/api/customer/orders', 'customer', ({ user }) => ({ orders: db.prepare('SELECT * FROM orders WHERE email=? ORDER BY created DESC LIMIT 50').all(user.email).map(orderOut) }));
 
 // public
 on('GET', '/api/menu', null, () => ({
@@ -122,23 +151,42 @@ on('GET', '/api/menu', null, () => ({
   products: db.prepare('SELECT id,cat,name,price,img,off FROM products ORDER BY id').all(),
   banners: db.prepare('SELECT id,title,sub,img FROM banners ORDER BY id').all(),
 }));
-on('POST', '/api/orders', null, ({ body, ip }) => {
+on('GET', '/api/coupons/active', null, () => ({ coupons: db.prepare('SELECT code,type,value FROM coupons WHERE active=1 AND (max_uses IS NULL OR uses<max_uses)').all() }));
+on('POST', '/api/coupon/check', null, ({ body }) => {
+  const code = String(body.code || '').trim().toUpperCase(), sub = +body.subtotal;
+  if (!code || !(sub > 0)) throw err(400, 'Coupon ya amount galat hai');
+  const c = db.prepare('SELECT * FROM coupons WHERE code=?').get(code);
+  if (!c) throw err(404, 'Ye coupon nahi mila');
+  if (!c.active) throw err(409, 'Ye coupon band hai');
+  if (c.max_uses && c.uses >= c.max_uses) throw err(409, 'Ye coupon khatam ho gaya');
+  return { code, discount: couponCalc(c, sub) };
+});
+on('POST', '/api/orders', null, ({ body, ip, req }) => {
   limit('ord' + ip, 8, 6e5);
   const name = str(body.name, 1, 60, 'Naam'), addr = str(body.addr, 8, 300, 'Address');
   if (!phoneOk(body.phone)) throw err(400, 'Phone number galat hai');
   const pay = ['Cash on Delivery', 'UPI'].includes(body.pay) ? body.pay : null; if (!pay) throw err(400, 'Payment method galat hai');
   if (!Array.isArray(body.items) || !body.items.length || body.items.length > 30) throw err(400, 'Cart khali hai');
-  let total = 0; const items = [];
+  let subtotal = 0; const items = [];
   for (const it of body.items) {
     const q = +it.q, p = db.prepare('SELECT * FROM products WHERE id=?').get(+it.id);
     if (!p || !Number.isInteger(q) || q < 1 || q > 20) throw err(400, 'Item galat hai');
     if (p.off) throw err(409, `${p.name} abhi available nahi hai`);
-    total += p.price * q; items.push({ n: p.name, p: p.price, q });
+    subtotal += p.price * q; items.push({ n: p.name, p: p.price, q });
   }
+  let discount = 0, coupon = null;
+  if (body.coupon) {
+    coupon = String(body.coupon).trim().toUpperCase();
+    const c = db.prepare('SELECT * FROM coupons WHERE code=?').get(coupon);
+    discount = couponCalc(c, subtotal);
+    if (!c || !c.active || discount <= 0) { coupon = null; discount = 0; } else db.prepare('UPDATE coupons SET uses=uses+1 WHERE code=?').run(coupon);
+  }
+  const total = subtotal - discount;
   const lat = typeof body.lat === 'number' ? body.lat : null, lng = typeof body.lng === 'number' ? body.lng : null;
   const seq = (db.prepare('SELECT MAX(seq) m FROM orders').get().m || 1000) + 1, id = 'CH' + seq;
-  db.prepare('INSERT INTO orders(id,seq,items,total,name,phone,addr,lat,lng,pay,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id, seq, JSON.stringify(items), total, name, body.phone, addr, lat, lng, pay, now());
-  offerAll(id); emit(id); return { id, total };
+  const tok = verify((req.headers.authorization || '').replace('Bearer ', '')), email = tok && tok.role === 'customer' ? tok.email : null;
+  db.prepare('INSERT INTO orders(id,seq,items,total,subtotal,discount,coupon,email,name,phone,addr,lat,lng,pay,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, seq, JSON.stringify(items), total, subtotal, discount, coupon, email, name, body.phone, addr, lat, lng, pay, now());
+  offerAll(id); emit(id); return { id, total, subtotal, discount };
 });
 on('GET', '/api/track/:id', null, ({ params, query }) => {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(params.id);
@@ -173,6 +221,17 @@ on('POST', '/api/owner/partners', 'owner', ({ body }) => {
   if (!phoneOk(body.phone)) throw err(400, '10 digit number daalein');
   try { return { id: Number(db.prepare('INSERT INTO partners(name,phone) VALUES(?,?)').run(str(body.name, 1, 60, 'Naam'), body.phone).lastInsertRowid) }; } catch (e) { if (typeof e.code === 'number') throw e; throw err(409, 'Ye number pehle se hai'); }
 });
+on('GET', '/api/owner/coupons', 'owner', () => ({ coupons: db.prepare('SELECT * FROM coupons ORDER BY created DESC').all() }));
+on('POST', '/api/owner/coupons', 'owner', ({ body }) => {
+  const code = String(body.code || '').trim().toUpperCase(); if (!/^[A-Z0-9]{3,15}$/.test(code)) throw err(400, 'Coupon code sirf letters/numbers, 3-15 characters');
+  if (!['percent', 'flat'].includes(body.type)) throw err(400, 'Type galat hai');
+  const value = +body.value; if (!(value > 0) || (body.type === 'percent' && value > 90)) throw err(400, 'Value galat hai (percent 90 se zyada nahi)');
+  const max_uses = body.max_uses ? +body.max_uses : null;
+  try { db.prepare('INSERT INTO coupons(code,type,value,max_uses,created) VALUES(?,?,?,?,?)').run(code, body.type, Math.round(value), max_uses, now()); } catch { throw err(409, 'Ye code pehle se hai'); }
+  return { ok: true, code };
+});
+on('PATCH', '/api/owner/coupons/:code', 'owner', ({ params, body }) => { const r = db.prepare('UPDATE coupons SET active=? WHERE code=?').run(body.active ? 1 : 0, params.code); if (!r.changes) throw err(404, 'Coupon nahi mila'); return { ok: true }; });
+on('DELETE', '/api/owner/coupons/:code', 'owner', ({ params }) => { db.prepare('DELETE FROM coupons WHERE code=?').run(params.code); return { ok: true }; });
 on('DELETE', '/api/owner/partners/:id', 'owner', ({ params }) => { if (db.prepare('SELECT 1 FROM orders WHERE rider=? AND status<4 AND cancelled=0').get(+params.id)) throw err(409, 'Rider ka order chal raha hai'); db.prepare('DELETE FROM partners WHERE id=?').run(+params.id); return { ok: true }; });
 
 // rider

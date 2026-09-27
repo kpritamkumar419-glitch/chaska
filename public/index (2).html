@@ -1,7 +1,10 @@
 <!DOCTYPE html><html lang="hi"><head><meta charset="utf-8"><title>Chaska Restaurant – Order Online</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="stylesheet" href="/common.css">
 <style>
-header{position:sticky;top:0;z-index:20;padding:12px 14px;background:var(--ac);color:#2b1a0e;font-weight:800;font-size:20px}
+header{position:sticky;top:0;z-index:20;padding:12px 14px;background:var(--ac);color:#2b1a0e;font-weight:800;font-size:20px;display:flex;align-items:center;gap:10px}
+header .acc{margin-left:auto;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}header .acc a{cursor:pointer;text-decoration:underline}
+.promo{background:#2e7d32;color:#fff;padding:8px 14px;font-size:13px;display:flex;gap:10px;align-items:center;position:sticky;top:46px;z-index:19}.promo button{margin-left:auto;background:none;border:0;color:#fff;font-size:16px;cursor:pointer}
+.cpn{display:flex;gap:6px}.cpn input{flex:1;margin:0;text-transform:uppercase}.cpn button{white-space:nowrap}
 .hero{perspective:900px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:20px 10px;background:radial-gradient(circle at 80% 30%,#ffd75e55,transparent 60%)}
 .hero h1{font-size:clamp(26px,6vw,44px);margin:0 0 8px}.hero p{color:var(--mut);margin:0 0 12px}
 .cubew{width:120px;height:120px;margin:30px 50px;perspective:600px}.cube{width:120px;height:120px;position:relative;transform-style:preserve-3d;animation:sp 14s linear infinite}
@@ -17,7 +20,7 @@ header{position:sticky;top:0;z-index:20;padding:12px 14px;background:var(--ac);c
 .cartb{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ac2);color:#fff;border:0;border-radius:30px;padding:14px 20px;font-weight:700;box-shadow:0 6px 16px #0006}
 footer{padding:20px 14px 90px;text-align:center;color:var(--mut);font-size:14px}footer a{color:var(--ac2);cursor:pointer;margin:0 8px}
 </style></head><body>
-<header>🍛 Chaska Restaurant</header>
+<header>🍛 Chaska Restaurant<span class="acc" id="acc"></span></header><div class="promo" id="promo" style="display:none"></div>
 <div class="w" id="app"></div>
 <footer>📍 Yadopur Rd, near Moniya Chowk, Indian Overseas Bank compound, Jalpurwan, Haziapur, Gopalganj, Bihar 841428<br>📞 097716 50477<br>
 <a onclick="L('privacy')">Privacy Policy</a><a onclick="L('terms')">Terms</a><a onclick="L('refund')">Refund &amp; Cancellation</a><a onclick="L('fssai')">Food Safety</a></footer>
@@ -25,10 +28,19 @@ footer{padding:20px 14px 90px;text-align:center;color:var(--mut);font-size:14px}
 <div class="modal" id="mod" onclick="if(event.target==this)C()"><div class="mb" id="mb"></div></div>
 <script src="/common.js"></script>
 <script>
-let M={cats:[],products:[],banners:[]},cart={},cat=0,si=0,loc=null,tr={},my=[];
+let M={cats:[],products:[],banners:[]},cart={},cat=0,si=0,loc=null,tr={},my=[],coupons=[],applied=null,ctok=localStorage.getItem('ck_ctok')||'',cname=localStorage.getItem('ck_cname')||'',clg={s:0,e:'',demo:''};
 try{my=JSON.parse(localStorage.getItem('ck_my')||'[]')}catch(x){}
 const P=id=>M.products.find(p=>p.id==id),tot=()=>Object.entries(cart).reduce((a,[k,q])=>a+(P(k)?.price||0)*q,0),cnt=()=>Object.values(cart).reduce((a,b)=>a+b,0);
-async function load(){try{M=await api('GET','/menu')}catch(x){$('#app').innerHTML='<div class="box">Server se connect nahi ho paaya. Thodi der baad try karein.</div>';return}draw()}
+async function load(){try{M=await api('GET','/menu')}catch(x){$('#app').innerHTML='<div class="box">Server se connect nahi ho paaya. Thodi der baad try karein.</div>';return}try{coupons=(await api('GET','/coupons/active')).coupons}catch(x){}draw();acc();promo();if(ctok)custOrders()}
+function acc(){$('#acc').innerHTML=ctok?`👤 ${esc(cname||'Account')} · <a onclick="clogout()">Logout</a>`:`<a onclick="clogin()">👤 Login</a>`}
+function clogin(){clg={s:0,e:'',demo:''};M_(`<h3>👤 Login</h3><p>Apna email daalein, OTP milega</p><input id="ce" placeholder="you@example.com" value=""><button class="btn g" style="width:100%" onclick="cGO()">Get OTP</button>`)}
+async function cGO(){const e=$('#ce').value.trim();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))return alert('Sahi email daalein');try{const r=await api('POST','/auth/otp',{email:e,role:'customer'});clg={s:1,e,demo:r.demo_otp||''};M_(`<h3>👤 Login</h3><p>OTP daalein (${esc(e)})</p><input id="co" class="big" maxlength="4" inputmode="numeric" placeholder="••••">${clg.demo?`<p><small>Demo OTP: ${esc(clg.demo)}</small></p>`:''}<input id="cnm" placeholder="Aapka naam (pehli baar ke liye)">
+<button class="btn g" style="width:100%" onclick="cVO()">Verify</button>`)}catch(e2){alert(e2.message)}}
+async function cVO(){try{const r=await api('POST','/auth/verify',{email:clg.e,role:'customer',otp:$('#co').value,name:$('#cnm').value||undefined});ctok=r.token;cname=r.name;localStorage.setItem('ck_ctok',ctok);localStorage.setItem('ck_cname',cname);C();acc();custOrders();toast('✅ Login ho gaya')}catch(e){alert(e.message)}}
+function clogout(){ctok='';cname='';localStorage.removeItem('ck_ctok');localStorage.removeItem('ck_cname');acc();toast('Logout ho gaya')}
+async function custOrders(){if(!ctok)return;try{const r=await api('GET','/customer/orders',null,ctok);for(const o of r.orders){tr[o.id]=o;if(!my.some(m=>m.id==o.id))my.unshift({id:o.id,phone:o.phone})}trk()}catch(x){}}
+function promo(){const el=$('#promo');let n=+localStorage.getItem('ck_promo_n')||0;if(!coupons.length||n>=2){el.style.display='none';return}el.style.display='flex';el.innerHTML=`🎁 Coupon try karein: <b>${coupons.map(c=>esc(c.code)).join(', ')}</b> – checkout par apply karein<button onclick="dismissPromo()">✕</button>`;localStorage.setItem('ck_promo_n',n+1)}
+function dismissPromo(){$('#promo').style.display='none'}
 function draw(){$('#app').innerHTML=`<div class="sl" id="sl"></div><div class="hero"><div style="flex:1;min-width:240px"><h1>चस्का रेस्टोरेंट 🍛</h1><p>Biryani, Tandoori, Rolls, Burger &amp; more – seedha ghar tak.</p><button class="btn" onclick="$('#menu').scrollIntoView({behavior:'smooth'})">Order Now</button></div><div class="cubew"><div class="cube"><div>🍛</div><div>🍗</div><div>🌯</div><div>🍔</div><div>🍢</div><div>🥤</div></div></div></div>
 <h2 id="menu">Menu</h2><div class="chips" id="chips"></div><div class="grid" id="grid"></div><h2>My Orders &amp; Live Tracking</h2><div id="trk"></div>
 <h2>Contact Us</h2><div class="box two"><div>📞 <b>097716 50477</b><br>📍 Yadopur Rd, Jalpurwan, Haziapur, Gopalganj, Bihar 841428<br>🕘 Opens 9:30 am</div><div><input id="cn" placeholder="Your name"><input id="cp" placeholder="Phone"><textarea id="cm" placeholder="Message"></textarea><button class="btn" onclick="CM()">Send message</button></div></div>`;slides();chips();grid();cb();trk()}
@@ -41,11 +53,18 @@ function T(ev,el){const r=el.getBoundingClientRect(),x=(ev.clientX-r.left)/r.wid
 function cb(){$('#cb').textContent=`🛒 Cart (${cnt()}) · ₹${tot()}`}
 function A(i,d){cart[i]=Math.max(0,(cart[i]||0)+d);if(!cart[i])delete cart[i];grid();cb()}
 const M_=h=>{$('#mb').innerHTML=h;$('#mod').classList.add('show')},C=()=>$('#mod').classList.remove('show');
-function CK(){if(!cnt())return M_('<h3>Cart khali hai</h3><button class="btn" onclick="C()">OK</button>');
- M_(`<h3>🛒 Your Cart</h3>${Object.entries(cart).map(([k,q])=>`<div>${esc(P(k).name)} × ${q} — ₹${P(k).price*q}</div>`).join('')}<h3>Total ₹${tot()}</h3><input id="on" placeholder="Name"><input id="op" placeholder="Phone (10 digit)" inputmode="numeric" maxlength="10"><textarea id="oa" placeholder="Full delivery address"></textarea><button class="btn s" onclick="LOC()" id="ls">📍 Meri location add karein (sahi doori ke liye)</button><select id="oy"><option value="Cash on Delivery">Cash on Delivery</option><option value="UPI">UPI (pay to 097716 50477)</option></select><button class="btn g" onclick="PO()">Place Order</button> <button class="btn s" onclick="C()">Close</button>`)}
+function cartHtml(){const sub=tot(),disc=applied?applied.discount:0,fin=Math.max(0,sub-disc);
+return`<h3>🛒 Your Cart</h3>${Object.entries(cart).map(([k,q])=>`<div>${esc(P(k).name)} × ${q} — ₹${P(k).price*q}</div>`).join('')}
+<div class="cpn"><input id="cpc" placeholder="Coupon code" value="${applied?esc(applied.code):''}"><button class="btn s" onclick="applyCoupon()">Apply</button>${applied?'<button class="btn s" onclick="removeCoupon()">✕</button>':''}</div>
+${applied?`<div style="color:#2e7d32">🎉 ${esc(applied.code)} laga: −₹${disc}</div>`:''}
+<h3>Total ₹${fin}${disc?` <small style="color:var(--mut);text-decoration:line-through">₹${sub}</small>`:''}</h3>
+<input id="on" placeholder="Name" value="${esc(cname||'')}"><input id="op" placeholder="Phone (10 digit)" inputmode="numeric" maxlength="10"><textarea id="oa" placeholder="Full delivery address"></textarea><button class="btn s" onclick="LOC()" id="ls">📍 Meri location add karein (sahi doori ke liye)</button><select id="oy"><option value="Cash on Delivery">Cash on Delivery</option><option value="UPI">UPI (pay to 097716 50477)</option></select><button class="btn g" onclick="PO()">Place Order</button> <button class="btn s" onclick="C()">Close</button>`}
+function CK(){if(!cnt())return M_('<h3>Cart khali hai</h3><button class="btn" onclick="C()">OK</button>');M_(cartHtml())}
+async function applyCoupon(){const code=$('#cpc').value.trim();if(!code)return;try{const r=await api('POST','/coupon/check',{code,subtotal:tot()});applied=r;M_(cartHtml())}catch(e){applied=null;alert(e.message)}}
+function removeCoupon(){applied=null;M_(cartHtml())}
 function LOC(){navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{loc={lat:p.coords.latitude,lng:p.coords.longitude};$('#ls').textContent='📍 Location added ✓'},()=>toast('Location permission allow karein')):toast('Location supported nahi')}
 async function PO(){const n=$('#on').value.trim(),p=$('#op').value.trim(),a=$('#oa').value.trim();if(!n||!/^[6-9]\d{9}$/.test(p)||a.length<8)return alert('Name, sahi 10 digit phone aur poora address bharein');
- try{const r=await api('POST','/orders',{name:n,phone:p,addr:a,pay:$('#oy').value,items:Object.entries(cart).map(([id,q])=>({id:+id,q})),...(loc||{})});my.unshift({id:r.id,phone:p});try{localStorage.setItem('ck_my',JSON.stringify(my))}catch(x){}cart={};loc=null;grid();cb();M_(`<h3>✅ Order placed!</h3>Order ID: <b>${r.id}</b> · ₹${r.total}<br>Neeche "My Orders" me live track karein.<br><br><button class="btn" onclick="C()">OK</button>`);pollTrack()}catch(e){alert(e.message)}}
+ try{const r=await api('POST','/orders',{name:n,phone:p,addr:a,pay:$('#oy').value,items:Object.entries(cart).map(([id,q])=>({id:+id,q})),coupon:applied?applied.code:undefined,...(loc||{})},ctok||undefined);my.unshift({id:r.id,phone:p});try{localStorage.setItem('ck_my',JSON.stringify(my))}catch(x){}cart={};loc=null;applied=null;grid();cb();M_(`<h3>✅ Order placed!</h3>Order ID: <b>${r.id}</b> · ₹${r.total}${r.discount?` (₹${r.discount} coupon discount)`:''}<br>Neeche "My Orders" me live track karein.<br><br><button class="btn" onclick="C()">OK</button>`);pollTrack()}catch(e){alert(e.message)}}
 async function CM(){if(!$('#cm').value.trim())return;try{await api('POST','/contact',{name:$('#cn').value||'Guest',phone:$('#cp').value,msg:$('#cm').value});toast('Message bhej diya ✅');$('#cm').value=''}catch(e){alert(e.message)}}
 async function pollTrack(){for(const m of my.slice(0,8)){const o=tr[m.id];if(o&&(o.status==4||o.cancelled))continue;try{tr[m.id]=await api('GET',`/track/${m.id}?phone=${m.phone}`)}catch(x){}}trk()}
 function trk(){const t=$('#trk');if(!t)return;const os=my.map(m=>tr[m.id]).filter(Boolean);t.innerHTML=os.length?os.map(o=>{const r=o.rider,rp=r&&r.lat!=null?{lat:r.lat,lng:r.lng}:null,left=rp&&o.dest?km(rp.lat,rp.lng,o.dest.lat,o.dest.lng):null;return`<div class="box"><b>${o.id}</b> <span class="tag">${o.cancelled?'Cancelled':ST[o.status]}</span> · ₹${o.total}<br>${o.items.map(i=>esc(i.n)+'×'+i.q).join(', ')}${o.cancelled?'':`<div class="st">${ST.map((s,i)=>`<i class="${i<=o.status?'d':''}"></i>`).join('')}</div>`}${r&&!o.cancelled?`🛵 ${esc(r.name)} · <a href="tel:${esc(r.phone)}">📞 Call</a>`:''}${o.status==3?mapSvg(o.restaurant,o.dest,rp)+(left!=null?`<small>📡 Rider live · ~${left} km door tak</small>`:'<small>📡 Rider raste me hai</small>'):''}</div>`}).join(''):'<div class="box">Abhi koi order nahi. Menu se order karein 👆</div>'}
